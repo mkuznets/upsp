@@ -10,10 +10,14 @@ import (
 
 type dbContextKey string
 
+// Store is a database abstraction that is used to access gateway objects
+// and initiate transactions that span multiple database operations.
 type Store interface {
 	querier(ctx context.Context) pgxtype.Querier
 
+	// Payments returns an interface for accessing gateway payments.
 	Payments() Payments
+	// Tx wraps the given op function in a transaction. The op may include multiple operations tied to the same Store instance.
 	Tx(ctx context.Context, op func(context.Context) error) error
 }
 
@@ -22,6 +26,7 @@ type storeImpl struct {
 	payments Payments
 }
 
+// New creates a new Store instance.
 func New(pool *pgxpool.Pool) Store {
 	s := &storeImpl{
 		pool: pool,
@@ -30,6 +35,7 @@ func New(pool *pgxpool.Pool) Store {
 	return s
 }
 
+// Payments returns an interface for accessing gateway payments.
 func (s *storeImpl) Payments() Payments {
 	return s.payments
 }
@@ -54,6 +60,7 @@ func (s *storeImpl) tx(ctx context.Context) (pgx.Tx, bool, error) {
 	return tx, true, nil
 }
 
+// Tx wraps the given op function in a transaction. The op may include multiple operations tied to the same Store instance.
 func (s *storeImpl) Tx(ctx context.Context, op func(context.Context) error) error {
 	tx, isInner, err := s.tx(ctx)
 	if err != nil {

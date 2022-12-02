@@ -6,6 +6,7 @@ import (
 	"time"
 )
 
+// Payments is an interface for accessing gateway payments.
 type Payments interface {
 	Create(ctx context.Context, payment *models.Payment) (string, error)
 	Get(ctx context.Context, id string) (*models.Payment, error)
@@ -17,6 +18,7 @@ type paymentsImpl struct {
 	s Store
 }
 
+// Create persists a new payment model.
 func (p *paymentsImpl) Create(ctx context.Context, payment *models.Payment) (string, error) {
 	var id string
 
@@ -40,6 +42,7 @@ func (p *paymentsImpl) Create(ctx context.Context, payment *models.Payment) (str
 	return id, err
 }
 
+// Get returns a payment model by ID.
 func (p *paymentsImpl) Get(ctx context.Context, id string) (*models.Payment, error) {
 	var payment models.Payment
 	err := p.s.querier(ctx).QueryRow(ctx, `
@@ -63,6 +66,7 @@ func (p *paymentsImpl) Get(ctx context.Context, id string) (*models.Payment, err
 	return &payment, err
 }
 
+// ListAll returns a list of all payment IDs.
 func (p *paymentsImpl) ListAll(ctx context.Context) ([]string, error) {
 	rows, err := p.s.querier(ctx).Query(ctx, `SELECT id FROM payments;`)
 	if err != nil {
@@ -81,6 +85,7 @@ func (p *paymentsImpl) ListAll(ctx context.Context) ([]string, error) {
 	return ids, nil
 }
 
+// Update mutates a payment by ID using the given op function.
 func (p *paymentsImpl) Update(ctx context.Context, id string, op func(payment *models.Payment) error) error {
 	payment, err := p.Get(ctx, id)
 	if err != nil {

@@ -11,7 +11,6 @@ func (a *acquirerImpl) asyncRefunder() {
 		if err != nil {
 			log.Printf("[ERR] could not list payments: %v", err)
 		}
-		log.Println(payments)
 
 		for _, payment := range payments {
 			if shouldRefund(payment.CardNumber) {
@@ -32,7 +31,6 @@ func (a *acquirerImpl) asyncTimeouter() {
 		if err != nil {
 			log.Printf("[ERR] could not list payments: %v", err)
 		}
-		log.Println(payments)
 
 		for _, payment := range payments {
 			if payment.UpdatedAt.Add(time.Minute).Before(time.Now()) {

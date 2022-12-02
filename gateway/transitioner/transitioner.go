@@ -3,12 +3,15 @@ package transitioner
 import (
 	"context"
 	"github.com/google/uuid"
+	"log"
 	"mkuznets.com/go/upsp/acquirer"
 	"mkuznets.com/go/upsp/gateway/models"
 	"mkuznets.com/go/upsp/gateway/store"
+	"time"
 )
 
 type Transitioner interface {
+	Start(ctx context.Context)
 	Transition(ctx context.Context, id string) error
 }
 
@@ -23,6 +26,27 @@ func New(s store.Store, acq acquirer.Acquirer) Transitioner {
 		acq: acq,
 	}
 	return t
+}
+
+func (t *transitionerImpl) Start(ctx context.Context) {
+	for {
+		ids, err := t.s.Payments().ListAll(ctx)
+		if err != nil {
+			log.Printf("[ERR] %v", err)
+			continue
+		}
+
+		for _, id := range ids {
+			err := t.Transition(ctx, id)
+			if err != nil {
+				log.Printf("[ERR] %v", err)
+				continue
+			}
+		}
+
+		time.Sleep(5 * time.Second)
+	}
+
 }
 
 func (t *transitionerImpl) Transition(ctx context.Context, id string) error {

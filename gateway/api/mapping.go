@@ -1,4 +1,4 @@
-package resources
+package api
 
 import (
 	"mkuznets.com/go/upsp/gateway/models"

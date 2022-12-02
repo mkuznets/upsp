@@ -53,10 +53,9 @@ var validTransactions = map[PaymentState][]PaymentState{
 
 // Payment is a record that represents a stored payment at the acquiring bank.
 type Payment struct {
-	Id        PaymentId
-	state     PaymentState
-	prevState PaymentState
-	Version   string
+	Id      PaymentId
+	state   PaymentState
+	Version string
 
 	Amount   int64
 	Currency string
@@ -81,7 +80,6 @@ func (p *Payment) SetState(state PaymentState) error {
 	if !isValidTransition(p.state, state) {
 		return fmt.Errorf("invalid payment transition: %s -> %s", p.state, state)
 	}
-	p.prevState = p.state
 	p.state = state
 	return nil
 }

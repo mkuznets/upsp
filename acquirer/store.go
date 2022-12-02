@@ -8,8 +8,10 @@ import (
 	"github.com/google/uuid"
 )
 
-// paymentStore is an interface to create, retrieve, and update payments.
-type paymentStore interface {
+//go:generate moq -out store_mock_test.go . Store
+
+// Store is an interface to create, retrieve, and update payments.
+type Store interface {
 	// CreateOrGet creates a new payment or returns an existing one with the same ID.
 	CreateOrGet(*Payment) (*Payment, error)
 	// Get retrieves a payment by ID.
@@ -20,26 +22,26 @@ type paymentStore interface {
 	Update(id PaymentId, version string, fn func(*Payment) error) (*Payment, error)
 }
 
-// paymentStoreImpl implements an in-memory thread-safe payment store.
-type paymentStoreImpl struct {
+// storeImpl implements an in-memory thread-safe payment store.
+type storeImpl struct {
 	db map[PaymentId]*Payment
 	l  *sync.Mutex
 }
 
-func newPaymentStore() paymentStore {
-	return &paymentStoreImpl{
+func NewStore() Store {
+	return &storeImpl{
 		db: make(map[PaymentId]*Payment),
 		l:  &sync.Mutex{},
 	}
 }
 
-func (s *paymentStoreImpl) lock(fn func(map[PaymentId]*Payment) error) error {
+func (s *storeImpl) lock(fn func(map[PaymentId]*Payment) error) error {
 	s.l.Lock()
 	defer s.l.Unlock()
 	return fn(s.db)
 }
 
-func (s *paymentStoreImpl) CreateOrGet(payment *Payment) (p *Payment, err error) {
+func (s *storeImpl) CreateOrGet(payment *Payment) (p *Payment, err error) {
 	err = s.lock(func(store map[PaymentId]*Payment) error {
 		if v, exists := store[payment.Id]; exists {
 			p = v
@@ -54,14 +56,14 @@ func (s *paymentStoreImpl) CreateOrGet(payment *Payment) (p *Payment, err error)
 	return
 }
 
-func (s *paymentStoreImpl) Get(id PaymentId) (*Payment, error) {
+func (s *storeImpl) Get(id PaymentId) (*Payment, error) {
 	if payment, ok := s.db[id]; ok {
 		return payment, nil
 	}
 	return nil, fmt.Errorf("payment not found: %s", id)
 }
 
-func (s *paymentStoreImpl) List(state PaymentState) ([]*Payment, error) {
+func (s *storeImpl) List(state PaymentState) ([]*Payment, error) {
 	var payments []*Payment
 
 	err := s.lock(func(store map[PaymentId]*Payment) error {
@@ -79,7 +81,7 @@ func (s *paymentStoreImpl) List(state PaymentState) ([]*Payment, error) {
 	return payments, nil
 }
 
-func (s *paymentStoreImpl) Update(id PaymentId, version string, fn func(*Payment) error) (*Payment, error) {
+func (s *storeImpl) Update(id PaymentId, version string, fn func(*Payment) error) (*Payment, error) {
 	payment := new(Payment)
 
 	err := s.lock(func(store map[PaymentId]*Payment) error {

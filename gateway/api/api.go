@@ -1,4 +1,4 @@
-package gateway
+package api
 
 import (
 	"context"
@@ -11,7 +11,6 @@ import (
 	"log"
 	"mkuznets.com/go/upsp/acquirer"
 	"mkuznets.com/go/upsp/gateway/models"
-	"mkuznets.com/go/upsp/gateway/resources"
 	"mkuznets.com/go/upsp/gateway/store"
 	"mkuznets.com/go/upsp/gateway/transitioner"
 	"net/http"
@@ -25,9 +24,7 @@ type Api struct {
 	router       *chi.Mux
 }
 
-func NewApi(store store.Store) *Api {
-	acq := acquirer.New()
-
+func New(store store.Store, acq acquirer.Acquirer) *Api {
 	a := &Api{
 		addr:         ":8080",
 		store:        store,
@@ -73,14 +70,16 @@ func (api *Api) Start(ctx context.Context) {
 }
 
 func (api *Api) CreatePayment(w http.ResponseWriter, r *http.Request) {
-	var request resources.CreatePaymentRequest
+	var request CreatePaymentRequest
 	if err := render.DecodeJSON(r.Body, &request); err != nil {
-		Handle(w, r, New(err, http.StatusBadRequest, "Invalid request"))
+		renderApiError(w, r, err, http.StatusBadRequest, "invalid request")
 		return
 	}
 
 	if err := request.Validate(); err != nil {
-		Handle(w, r, New(err, http.StatusBadRequest, err.Error()))
+		renderApiError(w, r, err, http.StatusBadRequest, err.Error())
+
+		renderError(w, r, &Error{err, http.StatusBadRequest, err.Error()})
 		return
 	}
 
@@ -114,8 +113,8 @@ func (api *Api) CreatePayment(w http.ResponseWriter, r *http.Request) {
 			return err
 		}
 
-		resp := &resources.CreatePaymentResponse{
-			PaymentResource: *resources.PaymentModelToResource(p),
+		resp := &CreatePaymentResponse{
+			PaymentResource: *PaymentModelToResource(p),
 		}
 
 		render.Status(r, http.StatusCreated)
@@ -123,7 +122,7 @@ func (api *Api) CreatePayment(w http.ResponseWriter, r *http.Request) {
 		return nil
 	})
 	if err != nil {
-		Handle(w, r, err)
+		renderError(w, r, err)
 		return
 	}
 
@@ -136,57 +135,14 @@ func (api *Api) GetPayment(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case err == pgx.ErrNoRows:
 		e := fmt.Errorf("no payment found")
-		SendError(w, r, e, http.StatusNotFound, e.Error())
+		renderApiError(w, r, e, http.StatusNotFound, e.Error())
 		return
 	case err != nil:
-		Handle(w, r, err)
+		renderError(w, r, err)
 		return
 	}
 
-	resp := resources.PaymentModelToResource(p)
-
 	render.Status(r, http.StatusOK)
-	render.JSON(w, r, resp)
+	render.JSON(w, r, PaymentModelToResource(p))
 	return
-}
-
-type APIError struct {
-	Err  error
-	Code int
-	Msg  string
-}
-
-func (e *APIError) Error() string {
-	return e.Msg
-}
-
-func (e *APIError) JSON() render.M {
-	return render.M{
-		"error":   http.StatusText(e.Code),
-		"message": e.Msg,
-	}
-}
-
-func New(err error, code int, msg string) *APIError {
-	return &APIError{err, code, msg}
-}
-
-func Handle(w http.ResponseWriter, r *http.Request, err error) {
-	switch v := err.(type) {
-	case *APIError:
-		render.Status(r, v.Code)
-		render.JSON(w, r, v.JSON())
-	default:
-		//if hub := sentry.GetHubFromContext(r.Context()); hub != nil {
-		//	hub.CaptureException(err)
-		//}
-		log.Printf("[ERR] %v", err)
-		e := New(err, http.StatusInternalServerError, "Unexpected system error")
-		render.Status(r, e.Code)
-		render.JSON(w, r, e.JSON())
-	}
-}
-
-func SendError(w http.ResponseWriter, r *http.Request, err error, code int, msg string) {
-	Handle(w, r, New(err, code, msg))
 }

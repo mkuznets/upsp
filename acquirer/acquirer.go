@@ -11,6 +11,7 @@ const (
 )
 
 type Acquirer interface {
+	Start()
 	GetPayment(PaymentId) (*PaymentResource, error)
 	CreatePayment(*CreatePaymentRequest) (*CreatePaymentResponse, error)
 	AuthorisePayment(id PaymentId, version string, req *AuthorisePaymentRequest) (*AuthorisePaymentResponse, error)
@@ -20,17 +21,18 @@ type Acquirer interface {
 }
 
 type acquirerImpl struct {
-	s paymentStore
+	s Store
 }
 
-func New() Acquirer {
-	a := &acquirerImpl{
-		s: newPaymentStore(),
+func New(s Store) Acquirer {
+	return &acquirerImpl{
+		s: s,
 	}
+}
+
+func (a *acquirerImpl) Start() {
 	go a.asyncRefunder()
 	go a.asyncTimeouter()
-
-	return a
 }
 
 // GetPayment gets a payment.
