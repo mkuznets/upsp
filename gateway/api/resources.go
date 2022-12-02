@@ -52,8 +52,8 @@ type PaymentResource struct {
 	Amount   int64  `json:"amount"`
 	Currency string `json:"currency"`
 
-	CardNumber string `json:"number"`
-	CardHolder string `json:"holder"`
+	CardNumber string `json:"card_number"`
+	CardHolder string `json:"card_holder"`
 	ExpiryDate string `json:"expiry_date"`
 	Cvv        string `json:"cvv"`
 
