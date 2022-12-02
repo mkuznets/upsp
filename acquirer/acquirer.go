@@ -35,7 +35,7 @@ func (a *acquirerImpl) Start() {
 	go a.asyncTimeouter()
 }
 
-// GetPayment gets a payment.
+// GetPayment returns a payment instance.
 func (a *acquirerImpl) GetPayment(id PaymentId) (*PaymentResource, error) {
 	p, err := a.s.Get(id)
 	if err != nil {
@@ -49,7 +49,7 @@ func (a *acquirerImpl) GetPayment(id PaymentId) (*PaymentResource, error) {
 	}, nil
 }
 
-// CreatePayment creates a new payment.
+// CreatePayment creates a new payment for the given amount and currency.
 func (a *acquirerImpl) CreatePayment(req *CreatePaymentRequest) (*CreatePaymentResponse, error) {
 	p := &Payment{
 		Id:       req.Id,
@@ -73,7 +73,7 @@ func (a *acquirerImpl) CreatePayment(req *CreatePaymentRequest) (*CreatePaymentR
 	}, nil
 }
 
-// AuthorisePayment authorises a payment.
+// AuthorisePayment stores the provided payment method details and initiates the payment autorisation.
 func (a *acquirerImpl) AuthorisePayment(id PaymentId, version string, req *AuthorisePaymentRequest) (*AuthorisePaymentResponse, error) {
 	var authUrl string
 	p, err := a.s.Update(id, version, func(m *Payment) error {
