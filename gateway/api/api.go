@@ -59,8 +59,6 @@ func (api *Api) CreatePayment(w http.ResponseWriter, r *http.Request) {
 
 	if err := request.Validate(); err != nil {
 		renderApiError(w, r, err, http.StatusBadRequest, err.Error())
-
-		renderError(w, r, &Error{err, http.StatusBadRequest, err.Error()})
 		return
 	}
 
