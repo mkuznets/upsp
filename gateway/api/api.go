@@ -34,6 +34,7 @@ func New(store store.Store, acq acquirer.Acquirer) *Api {
 
 	a.router.Use(middleware.Timeout(30 * time.Second))
 	a.router.Use(middleware.Recoverer)
+	a.router.Use(middleware.Logger)
 
 	a.router.Route("/payments", func(r chi.Router) {
 		r.Post("/", a.CreatePayment)
@@ -44,26 +45,6 @@ func New(store store.Store, acq acquirer.Acquirer) *Api {
 }
 
 func (api *Api) Start(ctx context.Context) {
-	go func() {
-		for {
-			ids, err := api.store.Payments().ListAll(ctx)
-			if err != nil {
-				log.Printf("[ERR] %v", err)
-				continue
-			}
-
-			for _, id := range ids {
-				err := api.transitioner.Transition(ctx, id)
-				if err != nil {
-					log.Printf("[ERR] %v", err)
-					continue
-				}
-			}
-
-			time.Sleep(1 * time.Second)
-		}
-	}()
-
 	if err := http.ListenAndServe(api.addr, api.router); err != nil {
 		log.Printf("[WARN] server has terminated: %s", err)
 	}
