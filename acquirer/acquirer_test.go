@@ -6,18 +6,14 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
-	"mkuznets.com/go/gateway/acquirer/models"
 )
 
 func TestNewAcquirer(t *testing.T) {
-	acq, err := NewAcquirer()
-	assert.NoError(t, err)
-
+	acq := New()
 	r, err := acq.CreatePayment(&CreatePaymentRequest{
-		Id:       models.PaymentId(uuid.NewString()),
+		Id:       PaymentId(uuid.NewString()),
 		Amount:   100,
 		Currency: "GBP",
-		HookUrl:  "http://127.0.0.1",
 	})
 	assert.NoError(t, err)
 	fmt.Println(r)

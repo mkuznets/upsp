@@ -1,18 +1,15 @@
 package acquirer
 
-import "mkuznets.com/go/gateway/acquirer/models"
-
 type PaymentResource struct {
-	Id      models.PaymentId
-	State   models.PaymentState
+	Id      PaymentId
+	State   PaymentState
 	Version string
 }
 
 type CreatePaymentRequest struct {
-	Id       models.PaymentId
+	Id       PaymentId
 	Amount   int64
 	Currency string
-	HookUrl  string
 }
 
 type CreatePaymentResponse struct {

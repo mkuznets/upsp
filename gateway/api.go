@@ -1,28 +1,38 @@
 package gateway
 
 import (
+	"context"
+	"fmt"
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
 	"github.com/go-chi/render"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v4"
 	"log"
-	"mkuznets.com/go/gateway/gateway/models"
-	"mkuznets.com/go/gateway/gateway/store"
+	"mkuznets.com/go/upsp/acquirer"
+	"mkuznets.com/go/upsp/gateway/models"
+	"mkuznets.com/go/upsp/gateway/resources"
+	"mkuznets.com/go/upsp/gateway/store"
+	"mkuznets.com/go/upsp/gateway/transitioner"
 	"net/http"
 	"time"
 )
 
 type Api struct {
-	addr   string
-	store  store.Store
-	router *chi.Mux
+	addr         string
+	store        store.Store
+	transitioner transitioner.Transitioner
+	router       *chi.Mux
 }
 
 func NewApi(store store.Store) *Api {
+	acq := acquirer.New()
+
 	a := &Api{
-		addr:   ":8080",
-		store:  store,
-		router: chi.NewRouter(),
+		addr:         ":8080",
+		store:        store,
+		router:       chi.NewRouter(),
+		transitioner: transitioner.New(store, acq),
 	}
 
 	a.router.Use(middleware.Timeout(30 * time.Second))
@@ -36,14 +46,34 @@ func NewApi(store store.Store) *Api {
 	return a
 }
 
-func (api *Api) Start() {
+func (api *Api) Start(ctx context.Context) {
+	go func() {
+		for {
+			ids, err := api.store.Payments().ListAll(ctx)
+			if err != nil {
+				log.Printf("[ERR] %v", err)
+				continue
+			}
+
+			for _, id := range ids {
+				err := api.transitioner.Transition(ctx, id)
+				if err != nil {
+					log.Printf("[ERR] %v", err)
+					continue
+				}
+			}
+
+			time.Sleep(1 * time.Second)
+		}
+	}()
+
 	if err := http.ListenAndServe(api.addr, api.router); err != nil {
 		log.Printf("[WARN] server has terminated: %s", err)
 	}
 }
 
 func (api *Api) CreatePayment(w http.ResponseWriter, r *http.Request) {
-	var request CreatePaymentRequest
+	var request resources.CreatePaymentRequest
 	if err := render.DecodeJSON(r.Body, &request); err != nil {
 		Handle(w, r, New(err, http.StatusBadRequest, "Invalid request"))
 		return
@@ -56,11 +86,9 @@ func (api *Api) CreatePayment(w http.ResponseWriter, r *http.Request) {
 
 	paymentModel := &models.Payment{
 		Id:         uuid.NewString(),
-		MerchantId: "123",
 		Amount:     request.Amount,
 		Currency:   request.Currency,
-		State:      models.PaymentStateNew,
-		Version:    uuid.NewString(),
+		State:      models.PaymentStateProcessing,
 		CardNumber: request.CardNumber,
 		CardHolder: request.CardHolder,
 		ExpiryDate: request.ExpiryDate,
@@ -71,20 +99,25 @@ func (api *Api) CreatePayment(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	err := api.store.Db().Tx(ctx, func(tx store.Tx) error {
+	err := api.store.Tx(ctx, func(ctx context.Context) error {
 		id, err := api.store.Payments().Create(ctx, paymentModel)
 		if err != nil {
 			return err
 		}
+
+		if err := api.transitioner.Transition(ctx, id); err != nil {
+			log.Printf("[ERR] %v", err)
+		}
+
 		p, err := api.store.Payments().Get(ctx, id)
 		if err != nil {
 			return err
 		}
 
-		resp := &CreatePaymentResponse{
-			Id:    p.Id,
-			State: p.State,
+		resp := &resources.CreatePaymentResponse{
+			PaymentResource: *resources.PaymentModelToResource(p),
 		}
+
 		render.Status(r, http.StatusCreated)
 		render.JSON(w, r, resp)
 		return nil
@@ -100,21 +133,17 @@ func (api *Api) CreatePayment(w http.ResponseWriter, r *http.Request) {
 func (api *Api) GetPayment(w http.ResponseWriter, r *http.Request) {
 	paymentId := chi.URLParam(r, "paymentId")
 	p, err := api.store.Payments().Get(r.Context(), paymentId)
-	if err != nil {
+	switch {
+	case err == pgx.ErrNoRows:
+		e := fmt.Errorf("no payment found")
+		SendError(w, r, e, http.StatusNotFound, e.Error())
+		return
+	case err != nil:
 		Handle(w, r, err)
 		return
 	}
 
-	resp := &PaymentResource{
-		Id:         p.Id,
-		State:      p.State,
-		Amount:     p.Amount,
-		Currency:   p.Currency,
-		CardNumber: p.CardNumber,
-		ExpiryDate: p.ExpiryDate,
-		CardHolder: p.CardHolder,
-		Cvv:        p.Cvv,
-	}
+	resp := resources.PaymentModelToResource(p)
 
 	render.Status(r, http.StatusOK)
 	render.JSON(w, r, resp)
@@ -156,4 +185,8 @@ func Handle(w http.ResponseWriter, r *http.Request, err error) {
 		render.Status(r, e.Code)
 		render.JSON(w, r, e.JSON())
 	}
+}
+
+func SendError(w http.ResponseWriter, r *http.Request, err error, code int, msg string) {
+	Handle(w, r, New(err, code, msg))
 }

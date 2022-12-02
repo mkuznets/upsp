@@ -1,10 +1,10 @@
-package gateway
+package resources
 
 import (
 	"fmt"
 	validation "github.com/go-ozzo/ozzo-validation"
 	"github.com/go-ozzo/ozzo-validation/is"
-	"mkuznets.com/go/gateway/gateway/models"
+	"mkuznets.com/go/upsp/gateway/models"
 	"time"
 )
 
@@ -42,8 +42,7 @@ func (r *CreatePaymentRequest) Validate() error {
 }
 
 type CreatePaymentResponse struct {
-	Id    string              `json:"id"`
-	State models.PaymentState `json:"state"`
+	PaymentResource
 }
 
 type PaymentResource struct {
@@ -54,7 +53,10 @@ type PaymentResource struct {
 	Currency string `json:"currency"`
 
 	CardNumber string `json:"number"`
-	ExpiryDate string `json:"expiry_date"`
 	CardHolder string `json:"holder"`
+	ExpiryDate string `json:"expiry_date"`
 	Cvv        string `json:"cvv"`
+
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }

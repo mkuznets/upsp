@@ -2,78 +2,125 @@ package store
 
 import (
 	"context"
-	"github.com/pkg/errors"
-	"mkuznets.com/go/gateway/gateway/models"
+	"mkuznets.com/go/upsp/gateway/models"
 	"time"
 )
 
 type Payments interface {
 	Create(ctx context.Context, payment *models.Payment) (string, error)
 	Get(ctx context.Context, id string) (*models.Payment, error)
-	UpdateState(ctx context.Context, id, version, status string) error
+	ListAll(ctx context.Context) ([]string, error)
+	Update(ctx context.Context, id string, op func(payment *models.Payment) error) error
 }
 
 type paymentsImpl struct {
-	db Db
+	s Store
 }
 
-func (s *paymentsImpl) Create(ctx context.Context, payment *models.Payment) (string, error) {
+func (p *paymentsImpl) Create(ctx context.Context, payment *models.Payment) (string, error) {
 	var id string
 
-	err := s.db.Tx(ctx, func(tx Tx) error {
-		err := tx.QueryRow(ctx, `
-		INSERT INTO payments (id, merchant_id, amount, currency, card_number, expiry_date, card_holder, cvv, state, "version", created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+	err := p.s.querier(ctx).QueryRow(ctx, `
+		INSERT INTO payments (id, amount, currency, card_number, expiry_date, card_holder, cvv, state, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		RETURNING id;
 		`,
-			payment.Id,
-			payment.MerchantId,
-			payment.Amount,
-			payment.Currency,
-			payment.CardNumber,
-			payment.ExpiryDate,
-			payment.CardHolder,
-			payment.Cvv,
-			payment.State,
-			payment.Version,
-			time.Now(),
-			time.Now(),
-		).Scan(&id)
-		return err
-	})
+		payment.Id,
+		payment.Amount,
+		payment.Currency,
+		payment.CardNumber,
+		payment.ExpiryDate,
+		payment.CardHolder,
+		payment.Cvv,
+		payment.State,
+		time.Now().UTC(),
+		time.Now().UTC(),
+	).Scan(&id)
 
-	return id, errors.WithStack(err)
+	return id, err
 }
 
-func (s *paymentsImpl) Get(ctx context.Context, id string) (*models.Payment, error) {
+func (p *paymentsImpl) Get(ctx context.Context, id string) (*models.Payment, error) {
 	var payment models.Payment
-	err := s.db.Tx(ctx, func(tx Tx) error {
-		err := tx.QueryRow(ctx, `
-		SELECT id, merchant_id, amount, currency, card_number, expiry_date, card_holder, cvv, state, version, created_at, updated_at
+	err := p.s.querier(ctx).QueryRow(ctx, `
+		SELECT id, amount, currency, card_number, expiry_date, card_holder, cvv, state, created_at, updated_at, acquiring_id, acquiring_state, acquiring_version
 		FROM payments
 		WHERE id = $1;
 		`, id).Scan(&payment.Id,
-			&payment.MerchantId,
-			&payment.Amount,
-			&payment.Currency,
-			&payment.CardNumber,
-			&payment.ExpiryDate,
-			&payment.CardHolder,
-			&payment.Cvv,
-			&payment.State,
-			&payment.Version,
-			&payment.CreatedAt,
-			&payment.UpdatedAt,
-		)
-		return err
-	})
-	if err != nil {
-		return nil, errors.WithStack(err)
-	}
-
-	return &payment, nil
+		&payment.Amount,
+		&payment.Currency,
+		&payment.CardNumber,
+		&payment.ExpiryDate,
+		&payment.CardHolder,
+		&payment.Cvv,
+		&payment.State,
+		&payment.CreatedAt,
+		&payment.UpdatedAt,
+		&payment.AcquiringId,
+		&payment.AcquiringState,
+		&payment.AcquiringVersion,
+	)
+	return &payment, err
 }
 
-func (s *paymentsImpl) UpdateState(ctx context.Context, id, version, status string) error {
+func (p *paymentsImpl) ListAll(ctx context.Context) ([]string, error) {
+	rows, err := p.s.querier(ctx).Query(ctx, `SELECT id FROM payments;`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err = rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
+}
+
+func (p *paymentsImpl) Update(ctx context.Context, id string, op func(payment *models.Payment) error) error {
+	payment, err := p.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+	if err = op(payment); err != nil {
+		return err
+	}
+
+	_, err = p.s.querier(ctx).Exec(ctx, `
+		UPDATE payments
+		SET amount = $2,
+			currency = $3,
+			card_number = $4,
+			expiry_date = $5,
+			card_holder = $6,
+			cvv = $7,
+			state = $8,
+			acquiring_id = $9,
+			acquiring_state = $10,
+			acquiring_version = $11,
+			updated_at = $12
+		WHERE id = $1;
+		`,
+		payment.Id,
+		payment.Amount,
+		payment.Currency,
+		payment.CardNumber,
+		payment.ExpiryDate,
+		payment.CardHolder,
+		payment.Cvv,
+		payment.State,
+		payment.AcquiringId,
+		payment.AcquiringState,
+		payment.AcquiringVersion,
+		time.Now().UTC(),
+	)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
